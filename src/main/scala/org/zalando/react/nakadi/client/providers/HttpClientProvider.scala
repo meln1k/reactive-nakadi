@@ -23,15 +23,14 @@ class HttpClientProvider(actorContext: ActorContext,
 
   val http = Http(actorContext.system)
 
-  private val settings = {
+  val connectionSettings = {
     ClientConnectionSettings
       .apply(actorContext.system)
       .withConnectingTimeout(connectionTimeout)
       .withIdleTimeout(Duration.Inf)
   }
 
-  val connection: Flow[HttpRequest, HttpResponse, Future[OutgoingConnection]] = {
-
+  val connectionContext = {
     isConnectionSSL match {
       case true =>
         val sslContext = if (acceptAnyCertificate) SSLContext.getDefault else {
@@ -46,9 +45,19 @@ class HttpClientProvider(actorContext: ActorContext,
           ctx.init(Array.empty, Array(permissiveTrustManager), new SecureRandom())
           ctx
         }
-        http.outgoingConnectionHttps(server, port, new HttpsConnectionContext(sslContext), settings = settings)
+        Some(new HttpsConnectionContext(sslContext))
       case false =>
-        http.outgoingConnection(server, port, settings = settings)
+        None
+    }
+  }
+
+
+  val connection: Flow[HttpRequest, HttpResponse, Future[OutgoingConnection]] = {
+
+    connectionContext map { context =>
+      http.outgoingConnectionHttps(server, port, context, settings = connectionSettings)
+    } getOrElse {
+      http.outgoingConnection(server, port, settings = connectionSettings)
     }
   }
 

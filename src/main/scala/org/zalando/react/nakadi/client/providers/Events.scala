@@ -217,14 +217,15 @@ class ProduceEvents(properties: ProducerProperties,
         request.addHeader(RawHeader("X-Flow-Id", flow))
       }
 
-      Source
-        .single(finalRequest)
-        .via(clientProvider.connection)
-        .mapAsync(4) {
-          case HttpResponse(status, _, _, _) if status.isSuccess() => Future.successful(Done)
-          case HttpResponse(status, _, entity, _) => handleInvalidResponse(entity, uri, status.value)(log.warning)
-        }.runWith(Sink.ignore).recover { case err => handleConnectionError(err)(log.error) }
-        .map(_ => ())
+
+      clientProvider.http.singleRequest(
+        request = finalRequest,
+        connectionContext = clientProvider.connectionContext.getOrElse(clientProvider.http.defaultClientHttpsContext)
+      ).flatMap {
+        case HttpResponse(status, _, _, _) if status.isSuccess() => Future.successful(())
+        case HttpResponse(status, _, entity, _) => handleInvalidResponse(entity, uri, status.value)(log.warning)
+      }.recover { case err => handleConnectionError(err)(log.error) }
+
     }
   }
 }
